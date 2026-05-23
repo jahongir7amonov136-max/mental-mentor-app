@@ -1,0 +1,36 @@
+{
+  "summary": "Backend-only testing for v2 extension of 21-ASR Raqamli Xizmatlar Markazi. Rewrote /app/backend/tests/backend_test.py to cover: service catalog v2 items (sw_divorce, ac_yatt_open/close/freeze, ac_corp_open/close, ac_ekey), KYC flow (submit->pending->admin approve), request gating (403 before KYC approved, accepts documents[]+ekey_files[] with field='ekey' tagging), mandatory rating (400 before approved, success with closed=true, duplicate rejected, 422 out-of-range), support chat (user/admin post, sorted list, threads), about/team CRUD + contact singleton update, admin stats with kyc_pending & support_open, and non-admin 403 on all /api/admin/* endpoints. 29/29 tests passed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 687 lines and close to the 700-line split threshold — consider splitting into routers (auth, kyc, requests, support, about, admin) for maintainability.",
+    "KYC endpoints store full base64 passport+selfie inline on kyc_records; for production move to object storage and keep only references.",
+    "admin_kyc_list: `status=approved/rejected/pending` filter works, but listing users with kyc_status in ['pending','approved','rejected'] also implicitly includes the seeded admin (kyc_status=approved). Admin Dashboard UI should filter role!=admin or backend should exclude admins.",
+    "rating endpoint uses `if r.get('rating')` which would also block rating=0, but Field(ge=1) prevents 0 so OK; consider explicit `is not None` for clarity.",
+    "CORS allow_origins=['*'] with allow_credentials=True — functionally fine for Bearer auth, but inconsistent; set allow_credentials=False or restrict origins.",
+    "seed_admin updates role+kyc_status+password if existing; good idempotency. seed_team and seed_contact only run if empty — also good.",
+    "Frontend bundling is currently broken (Metro: 'Adjacent JSX elements must be wrapped in an enclosing tag' in app/(auth)/login.tsx:194) — NOT in testing scope (backend-only) but main agent should fix before frontend retest."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (rewritten for v2)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "not_tested"},
+  "seed_data_creation": "Per-run: 1 TEST_ user (via register), 1 KYC record (passport+selfie base64 dummy), 1 service request (ac_ekey with 1 document + 1 ekey file, approved & rated), multiple TEST support messages (user + admin), 1 TEST team member (created+updated+deleted). Contact singleton gets phone/telegram updated to test values. Admin seeded automatically by server.on_startup. No DB cleanup implemented — admin may purge TEST_* data periodically.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Public URL key is EXPO_PUBLIC_BACKEND_URL in frontend/.env. Admin: admin@swsp.uz / Admin@123 (kyc_status auto-approved on startup). New request schema: documents[] and ekey_files[] (NOT files[]). ekey_files are stored with field='ekey'. Pre-KYC-approval -> POST /api/requests returns 403. Rating only allowed once, requires status=='approved'. Support polling GETs /api/support/messages/mine and /api/admin/support/messages/{user_id}. About/team/contact endpoints at /api/about (public) and /api/admin/team|contact (admin). Admin stats now includes kyc_pending & support_open. FRONTEND BUNDLER IS BROKEN (login.tsx JSX error) — not tested here; flag to main agent.",
+  "rca_of_issue": "N/A — all backend v2 tests pass."
+}
