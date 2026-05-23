@@ -1252,7 +1252,7 @@ async def root():
     return {"message": "21-ASR Raqamli Xizmatlar Markazi API"}
 
 
-@app.get("/")
+@api_router.get("/health")
 async def health():
     return {"status": "ok", "service": "21-ASR API", "docs": "/api/"}
 
