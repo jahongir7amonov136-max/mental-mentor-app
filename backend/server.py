@@ -1257,19 +1257,6 @@ async def health():
     return {"status": "ok", "service": "21-ASR API", "docs": "/api/"}
 
 
-app.include_router(api_router)
-
-# Get allowed origins from environment, default to localhost for development
-allowed_origins = os.environ.get("CORS_ORIGINS", "http://localhost:8081,http://localhost:19000,http://localhost:19006").split(",")
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=allowed_origins,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -1389,3 +1376,15 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="21-ASR Raqamli Xizmatlar Markazi API", lifespan=lifespan)
+
+app.include_router(api_router)
+
+# Get allowed origins from environment, default to localhost for development
+allowed_origins = os.environ.get("CORS_ORIGINS", "http://localhost:8081,http://localhost:19000,http://localhost:19006").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_origins=allowed_origins,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
