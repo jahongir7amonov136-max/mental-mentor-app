@@ -164,6 +164,35 @@ def super_admin_phone() -> str:
     )
 
 
+async def sync_super_admin_role(user: dict) -> dict:
+    """Super admin telefoni user rolida qolmasin — har so'rovda DB ni tuzatadi."""
+    if not user:
+        return user
+    phone = normalize_phone(user.get("phone", ""))
+    if phone != super_admin_phone():
+        return user
+    if (
+        user.get("role") == "super_admin"
+        and user.get("offer_accepted_at")
+        and user.get("kyc_status") == "approved"
+    ):
+        return user
+    now = now_iso()
+    await db.users.update_one(
+        {"id": user["id"]},
+        {
+            "$set": {
+                "role": "super_admin",
+                "kyc_status": "approved",
+                "offer_accepted_at": user.get("offer_accepted_at") or now,
+                "offer_version": OFFER_VERSION,
+            }
+        },
+    )
+    fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
+    return fresh or user
+
+
 def is_staff(role: str) -> bool:
     return role in ("admin", "super_admin")
 
@@ -239,7 +268,7 @@ async def get_current_user(request: Request) -> dict:
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     user.pop("password_hash", None)
-    return user
+    return await sync_super_admin_role(user)
 
 
 async def require_admin(user: dict = Depends(get_current_user)) -> dict:
@@ -486,24 +515,10 @@ async def login(body: LoginIn):
             logger.warning(f"Failed login attempt for phone: {phone}")
             raise HTTPException(status_code=401, detail="Invalid credentials")
         
-        # Always update super admin role if phone matches
+        user = await sync_super_admin_role(user)
         if phone == super_admin_phone():
-            if user.get("role") != "super_admin":
-                now = now_iso()
-                await db.users.update_one(
-                    {"id": user["id"]},
-                    {"$set": {
-                        "role": "super_admin",
-                        "kyc_status": "approved",
-                        "offer_accepted_at": user.get("offer_accepted_at") or now,
-                        "offer_version": OFFER_VERSION,
-                    }},
-                )
-                user = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
-                logger.info(f"Updated user {phone} to super_admin role")
-            else:
-                logger.info(f"User {phone} already has super_admin role")
-        
+            logger.info(f"Super admin login: {phone} role={user.get('role')}")
+
         token = create_access_token(user["id"], user["phone"], user.get("role", "user"))
         logger.info(f"User logged in: {phone} with role: {user.get('role')}")
         return TokenOut(access_token=token, user=serialize_user(user))
@@ -536,9 +551,9 @@ async def get_offer(lang: str = "uz"):
 
 @api_router.post("/auth/accept-offer")
 async def accept_offer(user: dict = Depends(get_current_user)):
+    user = await sync_super_admin_role(user)
     if user.get("role") != "user":
-        fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
-        return serialize_user(fresh)
+        return serialize_user(user)
     now = now_iso()
     await db.users.update_one(
         {"id": user["id"]},

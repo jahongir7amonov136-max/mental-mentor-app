@@ -10,11 +10,17 @@
     },
     "preview": {
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://two1-asr-backend-oxiri.onrender.com"
+      },
       "android": {
         "buildType": "apk"
       }
     },
     "production": {
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://two1-asr-backend-oxiri.onrender.com"
+      },
       "android": {
         "buildType": "apk"
       }
