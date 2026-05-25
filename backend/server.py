@@ -1379,8 +1379,9 @@ app = FastAPI(title="21-ASR Raqamli Xizmatlar Markazi API", lifespan=lifespan)
 
 app.include_router(api_router)
 
-# Get allowed origins from environment, default to localhost for development
-allowed_origins = os.environ.get("CORS_ORIGINS", "http://localhost:8081,http://localhost:19000,http://localhost:19006").split(",")
+# Get allowed origins from environment, default to all for production APK
+cors_origins_env = os.environ.get("CORS_ORIGINS", "*")
+allowed_origins = ["*"] if cors_origins_env == "*" else cors_origins_env.split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
