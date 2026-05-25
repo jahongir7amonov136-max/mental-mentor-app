@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from "react";
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Inbox } from "lucide-react-native";
 import { api } from "../../src/api";
@@ -41,6 +41,9 @@ export default function MyRequests() {
     setRefreshing(false);
   };
 
+  const insets = useSafeAreaInsets();
+  const scrollBottom = 72 + Math.max(insets.bottom, 24);
+
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.header}>
@@ -50,7 +53,7 @@ export default function MyRequests() {
       <FlatList
         data={items}
         keyExtractor={(it) => it.id}
-        contentContainerStyle={{ padding: 20, paddingTop: 4, paddingBottom: 40 }}
+        contentContainerStyle={{ padding: 20, paddingTop: 4, paddingBottom: scrollBottom }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />}
         ListEmptyComponent={
           <View style={styles.empty}>

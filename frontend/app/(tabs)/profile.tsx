@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { LogOut, Mail, Phone, User as UserIcon, Globe, Shield, ShieldCheck, ShieldAlert, MessageCircle, Info, ChevronRight, CreditCard } from "lucide-react-native";
 import { useAuth, isStaff, isSuperAdmin } from "../../src/auth";
@@ -27,10 +27,12 @@ export default function Profile() {
   const kyc = user?.kyc_status || "none";
   const kycColor = kyc === "approved" ? COLORS.approvedText : kyc === "rejected" ? COLORS.rejectedText : COLORS.primary;
   const kycLabel = kyc === "approved" ? t("kycApproved") : kyc === "pending" ? t("kycPending") : kyc === "rejected" ? t("kycRejected") : t("kycNone");
+  const insets = useSafeAreaInsets();
+  const scrollBottom = 72 + Math.max(insets.bottom, 24);
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: scrollBottom }]}>
         <Text style={styles.title}>{t("profile")}</Text>
 
         <View style={styles.profileCard}>

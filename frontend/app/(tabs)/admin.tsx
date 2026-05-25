@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList,
   RefreshControl, Alert, ScrollView, Modal, Switch, Image,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Search, X, ChevronRight, ShieldCheck, Users, MessageSquare, Phone, FileText, CreditCard, Newspaper, UserPlus } from "lucide-react-native";
 import { api, formatApiError } from "../../src/api";
@@ -53,6 +53,9 @@ export default function AdminHub() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
+
+  const insets = useSafeAreaInsets();
+  const scrollBottom = 72 + Math.max(insets.bottom, 24);
 
   const openEditor = async (req: any) => {
     setEditing(req);
@@ -109,7 +112,7 @@ export default function AdminHub() {
       </View>
 
       <ScrollView
-        contentContainerStyle={{ paddingBottom: 40 }}
+        contentContainerStyle={{ paddingBottom: scrollBottom }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />}
       >
         {stats && (

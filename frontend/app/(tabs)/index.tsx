@@ -2,7 +2,7 @@ import React, { useCallback, useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, Image,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Building2, Calculator, ChevronRight, Clock, ShieldAlert, ShieldCheck, Bell } from "lucide-react-native";
 import { useAuth, isStaff } from "../../src/auth";
@@ -46,11 +46,13 @@ export default function Home() {
 
   const onRefresh = async () => { setRefreshing(true); await load(); await refresh(); setRefreshing(false); };
   const kycStatus = user?.kyc_status || "none";
+  const insets = useSafeAreaInsets();
+  const scrollBottom = 72 + Math.max(insets.bottom, 24);
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={[styles.scroll, { paddingBottom: scrollBottom }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />}
       >
         <View style={styles.header}>

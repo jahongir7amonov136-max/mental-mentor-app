@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from "react";
-import { View, Text, StyleSheet, Image, Animated, Easing } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { View, Text, StyleSheet, Image, Animated, Easing, LayoutChangeEvent } from "react-native";
 import { Newspaper } from "lucide-react-native";
 import { COLORS, RADIUS } from "../theme";
 
@@ -38,6 +38,43 @@ function NewsCard({ item }: { item: NewsItem }) {
   );
 }
 
+/** Gorizontal yuguruvchi matn — 1 ta yangilik bo'lsa ham harakatlanadi */
+function MarqueeStrip({ text }: { text: string }) {
+  const scrollX = useRef(new Animated.Value(0)).current;
+  const [segmentWidth, setSegmentWidth] = useState(0);
+
+  useEffect(() => {
+    if (segmentWidth <= 0) return;
+    scrollX.setValue(0);
+    const anim = Animated.loop(
+      Animated.timing(scrollX, {
+        toValue: -segmentWidth,
+        duration: Math.max(segmentWidth * 18, 6000),
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [segmentWidth, text, scrollX]);
+
+  const onMeasure = (e: LayoutChangeEvent) => {
+    const w = e.nativeEvent.layout.width;
+    if (w > 0 && w !== segmentWidth) setSegmentWidth(w);
+  };
+
+  return (
+    <View style={styles.marqueeBox}>
+      <Animated.View style={[styles.marqueeRow, { transform: [{ translateX: scrollX }] }]}>
+        <Text style={styles.marqueeText} onLayout={onMeasure}>
+          {text}
+        </Text>
+        <Text style={[styles.marqueeText, styles.marqueeGap]}>{text}</Text>
+      </Animated.View>
+    </View>
+  );
+}
+
 export function NewsTicker({ items, title }: { items: NewsItem[]; title: string }) {
   const scrollY = useRef(new Animated.Value(0)).current;
 
@@ -64,7 +101,12 @@ export function NewsTicker({ items, title }: { items: NewsItem[]; title: string 
 
   if (items.length === 0) return null;
 
-  const boxHeight = items.length === 1 ? CARD_HEIGHT + 8 : Math.min(240, items.length * (CARD_HEIGHT + CARD_GAP) + 8);
+  const marqueeText = items
+    .map((n) => `${n.title}${n.body ? ` — ${n.body}` : ""}`)
+    .join("          •          ");
+
+  const boxHeight =
+    items.length === 1 ? CARD_HEIGHT + 8 : Math.min(240, items.length * (CARD_HEIGHT + CARD_GAP) + 8);
 
   return (
     <View style={styles.wrap}>
@@ -72,7 +114,10 @@ export function NewsTicker({ items, title }: { items: NewsItem[]; title: string 
         <Newspaper color={COLORS.primary} size={14} />
         <Text style={styles.label}>{title}</Text>
       </View>
-      <View style={[styles.viewport, { height: boxHeight }]}>
+
+      <MarqueeStrip text={marqueeText} />
+
+      <View style={[styles.viewport, { height: boxHeight, marginTop: 10 }]}>
         {items.length === 1 ? (
           <NewsCard item={items[0]} />
         ) : (
@@ -91,11 +136,29 @@ export function NewsTicker({ items, title }: { items: NewsItem[]; title: string 
 
 const styles = StyleSheet.create({
   wrap: { marginBottom: 18 },
-  labelRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 },
+  labelRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 },
   label: {
-    fontSize: 12, fontWeight: "700", color: COLORS.textMuted,
-    letterSpacing: 1.2, textTransform: "uppercase",
+    fontSize: 12,
+    fontWeight: "700",
+    color: COLORS.textMuted,
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
   },
+  marqueeBox: {
+    height: 40,
+    overflow: "hidden",
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.md,
+    justifyContent: "center",
+  },
+  marqueeRow: { flexDirection: "row", alignItems: "center" },
+  marqueeText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: COLORS.onPrimary,
+    flexShrink: 0,
+  },
+  marqueeGap: { marginLeft: 48 },
   viewport: { overflow: "hidden", borderRadius: RADIUS.lg },
   card: {
     height: CARD_HEIGHT,
@@ -108,8 +171,11 @@ const styles = StyleSheet.create({
   },
   thumb: { width: 100, height: "100%" },
   thumbFallback: {
-    width: 100, height: "100%", backgroundColor: COLORS.subtle,
-    alignItems: "center", justifyContent: "center",
+    width: 100,
+    height: "100%",
+    backgroundColor: COLORS.subtle,
+    alignItems: "center",
+    justifyContent: "center",
   },
   cardBody: { flex: 1, padding: 10, justifyContent: "center" },
   cardTitle: { fontSize: 14, fontWeight: "800", color: COLORS.text, marginBottom: 4 },

@@ -4,7 +4,8 @@ import { Home, FileText, User, Shield } from "lucide-react-native";
 import { useAuth, isStaff, needsOffer } from "../../src/auth";
 import { useI18n } from "../../src/i18n";
 import { COLORS } from "../../src/theme";
-import { View, ActivityIndicator, StyleSheet } from "react-native";
+import { View, ActivityIndicator, StyleSheet, Platform } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function TabsLayout() {
   const { user, loading } = useAuth();
@@ -25,6 +26,9 @@ export default function TabsLayout() {
   }
 
   const isAdmin = isStaff(user);
+  const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(insets.bottom, Platform.OS === "android" ? 24 : 8);
+  const tabBarHeight = 56 + bottomInset;
 
   return (
     <Tabs
@@ -35,11 +39,12 @@ export default function TabsLayout() {
         tabBarStyle: {
           backgroundColor: COLORS.surface,
           borderTopColor: COLORS.borderLight,
-          height: 64,
-          paddingBottom: 8,
-          paddingTop: 6,
+          height: tabBarHeight,
+          paddingBottom: bottomInset,
+          paddingTop: 8,
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: "600", marginBottom: 2 },
+        sceneStyle: { paddingBottom: 0 },
       }}
     >
       <Tabs.Screen
