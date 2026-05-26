@@ -31,3 +31,14 @@ Same as v2: Expo Router + FastAPI + MongoDB + JWT (phone-based)
 ## Contact Items APIs (yangi)
 - GET `/api/contact-items` (public) - dynamic contact items
 - CRUD `/api/admin/contact-items`
+
+## Service catalog (admin-managed)
+- MongoDB `services` collection; seeded from defaults on first startup
+- GET `/api/services/catalog` — faqat `active` xizmatlar
+- GET/POST/PATCH/DELETE `/api/admin/services` — CRUD (barcha adminlar)
+
+## Client management (admin)
+- GET `/api/admin/clients` — oferta qabul + KYC approved foydalanuvchilar
+- PATCH `/api/admin/clients/{id}/phone` — telefon o'zgartirish
+- PATCH `/api/admin/clients/{id}/block` — bloklash
+- PATCH `/api/admin/clients/{id}/unblock` — blokdan ochish

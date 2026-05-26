@@ -15,6 +15,9 @@ export type User = {
   offer_accepted_at?: string | null;
   offer_version?: string | null;
   created_at?: string;
+  blocked?: boolean;
+  blocked_at?: string | null;
+  blocked_note?: string;
 };
 
 export const isStaff = (u?: User | null) =>

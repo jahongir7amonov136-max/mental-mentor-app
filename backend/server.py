@@ -5,6 +5,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 import os
+import re
 import logging
 import uuid
 import bcrypt
@@ -211,7 +212,41 @@ def serialize_user(u: dict) -> dict:
         "offer_accepted_at": u.get("offer_accepted_at"),
         "offer_version": u.get("offer_version"),
         "created_at": u.get("created_at"),
+        "blocked": bool(u.get("blocked")),
+        "blocked_at": u.get("blocked_at"),
+        "blocked_note": u.get("blocked_note") or "",
     }
+
+
+def ensure_not_blocked(user: dict) -> None:
+    if user.get("role") == "user" and user.get("blocked"):
+        raise HTTPException(status_code=403, detail="Hisobingiz bloklangan. Administrator bilan bog'laning.")
+
+
+async def get_manageable_user(user_id: str) -> dict:
+    u = await db.users.find_one({"id": user_id})
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+    if u.get("role") != "user":
+        raise HTTPException(status_code=400, detail="Faqat oddiy foydalanuvchilarni boshqarish mumkin")
+    return u
+
+
+def verified_client_query(search: Optional[str] = None) -> dict:
+    q: dict = {
+        "role": "user",
+        "kyc_status": "approved",
+        "offer_accepted_at": {"$exists": True, "$ne": None},
+    }
+    if search:
+        s = search.strip()
+        if s:
+            q["$or"] = [
+                {"first_name": {"$regex": s, "$options": "i"}},
+                {"last_name": {"$regex": s, "$options": "i"}},
+                {"phone": {"$regex": s, "$options": "i"}},
+            ]
+    return q
 
 
 def strip_file_content(files: list) -> list:
@@ -268,7 +303,9 @@ async def get_current_user(request: Request) -> dict:
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     user.pop("password_hash", None)
-    return await sync_super_admin_role(user)
+    user = await sync_super_admin_role(user)
+    ensure_not_blocked(user)
+    return user
 
 
 async def require_admin(user: dict = Depends(get_current_user)) -> dict:
@@ -330,6 +367,17 @@ class KycSubmitIn(BaseModel):
 class KycDecisionIn(BaseModel):
     decision: Literal["approved", "rejected"]
     note: Optional[str] = ""
+
+
+class ServiceItemIn(BaseModel):
+    category: Literal["single_window", "accounting"]
+    title_uz: str = Field(min_length=1, max_length=300)
+    title_ru: str = Field(min_length=1, max_length=300)
+    title_en: str = Field(min_length=1, max_length=300)
+    icon: str = "circle"
+    order: int = 0
+    active: bool = True
+    service_id: Optional[str] = None
 
 
 class ServiceRequestIn(BaseModel):
@@ -424,6 +472,14 @@ class NewsIn(BaseModel):
     order: int = 0
 
 
+class AdminUserPhoneIn(BaseModel):
+    phone: str = Field(min_length=5, max_length=30)
+
+
+class AdminUserBlockIn(BaseModel):
+    note: Optional[str] = ""
+
+
 class AdminCreateIn(BaseModel):
     first_name: str = Field(min_length=1, max_length=100)
     last_name: str = Field(min_length=1, max_length=100)
@@ -492,6 +548,9 @@ async def register(body: RegisterIn):
             "kyc_note": "",
             "offer_accepted_at": None,
             "offer_version": None,
+            "blocked": False,
+            "blocked_at": None,
+            "blocked_note": "",
             "created_at": now_iso(),
         }
         await db.users.insert_one(user_doc)
@@ -514,7 +573,9 @@ async def login(body: LoginIn):
         if not user or not verify_password(body.password, user["password_hash"]):
             logger.warning(f"Failed login attempt for phone: {phone}")
             raise HTTPException(status_code=401, detail="Invalid credentials")
-        
+        if user.get("blocked") and user.get("role") == "user":
+            raise HTTPException(status_code=403, detail="Hisobingiz bloklangan. Administrator bilan bog'laning.")
+
         user = await sync_super_admin_role(user)
         if phone == super_admin_phone():
             logger.info(f"Super admin login: {phone} role={user.get('role')}")
@@ -643,9 +704,123 @@ async def admin_kyc_decide(user_id: str, body: KycDecisionIn, admin: dict = Depe
 
 
 # ================= Services =================
+def slugify_service_id(text: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "_", (text or "").lower().strip())
+    return s.strip("_")[:40]
+
+
+def serialize_service_item(s: dict) -> dict:
+    return {
+        "id": s["id"],
+        "category": s.get("category", "single_window"),
+        "title_uz": s.get("title_uz", ""),
+        "title_ru": s.get("title_ru", ""),
+        "title_en": s.get("title_en", ""),
+        "icon": s.get("icon", "circle"),
+        "order": s.get("order", 0),
+        "active": s.get("active", True),
+        "created_at": s.get("created_at"),
+        "updated_at": s.get("updated_at"),
+    }
+
+
+def catalog_item_from_doc(s: dict) -> dict:
+    return {
+        "id": s["id"],
+        "title_uz": s.get("title_uz", ""),
+        "title_ru": s.get("title_ru", ""),
+        "title_en": s.get("title_en", ""),
+        "icon": s.get("icon", "circle"),
+    }
+
+
+async def build_catalog(active_only: bool = True) -> dict:
+    q = {"active": True} if active_only else {}
+    cursor = db.services.find(q, {"_id": 0}).sort([("category", 1), ("order", 1), ("title_uz", 1)])
+    items = await cursor.to_list(1000)
+    out: dict = {"single_window": [], "accounting": []}
+    for s in items:
+        cat = s.get("category")
+        if cat in out:
+            out[cat].append(catalog_item_from_doc(s))
+    return out
+
+
+async def new_service_id(category: str, title_uz: str, custom: Optional[str] = None) -> str:
+    if custom and custom.strip():
+        return custom.strip()
+    prefix = "sw" if category == "single_window" else "ac"
+    base = slugify_service_id(title_uz)
+    candidate = f"{prefix}_{base}" if base else f"{prefix}_{uuid.uuid4().hex[:8]}"
+    if not await db.services.find_one({"id": candidate}):
+        return candidate
+    return f"{candidate}_{uuid.uuid4().hex[:6]}"
+
+
 @api_router.get("/services/catalog")
 async def get_catalog():
-    return SERVICE_CATALOG
+    return await build_catalog(active_only=True)
+
+
+@api_router.get("/admin/services")
+async def admin_list_services(admin: dict = Depends(require_admin)):
+    items = await db.services.find({}, {"_id": 0}).sort([("category", 1), ("order", 1), ("title_uz", 1)]).to_list(1000)
+    return [serialize_service_item(s) for s in items]
+
+
+@api_router.post("/admin/services")
+async def admin_create_service(body: ServiceItemIn, admin: dict = Depends(require_admin)):
+    sid = await new_service_id(body.category, body.title_uz, body.service_id)
+    if await db.services.find_one({"id": sid}):
+        raise HTTPException(status_code=400, detail="Xizmat identifikatori allaqachon mavjud")
+    now = now_iso()
+    doc = {
+        "id": sid,
+        "category": body.category,
+        "title_uz": body.title_uz.strip(),
+        "title_ru": body.title_ru.strip(),
+        "title_en": body.title_en.strip(),
+        "icon": (body.icon or "circle").strip(),
+        "order": body.order,
+        "active": body.active,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.services.insert_one(doc)
+    logger.info(f"Admin {admin['id']} created service {sid}")
+    return serialize_service_item(doc)
+
+
+@api_router.patch("/admin/services/{service_id}")
+async def admin_update_service(
+    service_id: str, body: ServiceItemIn, admin: dict = Depends(require_admin)
+):
+    existing = await db.services.find_one({"id": service_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Xizmat topilmadi")
+    updates = {
+        "category": body.category,
+        "title_uz": body.title_uz.strip(),
+        "title_ru": body.title_ru.strip(),
+        "title_en": body.title_en.strip(),
+        "icon": (body.icon or "circle").strip(),
+        "order": body.order,
+        "active": body.active,
+        "updated_at": now_iso(),
+    }
+    await db.services.update_one({"id": service_id}, {"$set": updates})
+    fresh = await db.services.find_one({"id": service_id}, {"_id": 0})
+    logger.info(f"Admin {admin['id']} updated service {service_id}")
+    return serialize_service_item(fresh)
+
+
+@api_router.delete("/admin/services/{service_id}")
+async def admin_delete_service(service_id: str, admin: dict = Depends(require_admin)):
+    r = await db.services.delete_one({"id": service_id})
+    if not r.deleted_count:
+        raise HTTPException(status_code=404, detail="Xizmat topilmadi")
+    logger.info(f"Admin {admin['id']} deleted service {service_id}")
+    return {"ok": True}
 
 
 # ================= Requests =================
@@ -655,6 +830,12 @@ async def create_request(body: ServiceRequestIn, user: dict = Depends(get_curren
         ensure_offer_accepted(user)
         if user.get("kyc_status") != "approved":
             raise HTTPException(status_code=403, detail="KYC not approved. Please complete identification first.")
+        svc = await db.services.find_one(
+            {"id": body.service_id, "category": body.category, "active": True},
+            {"_id": 0},
+        )
+        if not svc:
+            raise HTTPException(status_code=400, detail="Xizmat topilmadi yoki faol emas")
         # Validate file sizes
         for i, f in enumerate(body.documents):
             validate_file_size(f.dict(), f"document_{i}")
@@ -1019,11 +1200,13 @@ async def admin_stats(admin: dict = Depends(require_admin)):
     approved = await db.requests.count_documents({"status": "approved"})
     rejected = await db.requests.count_documents({"status": "rejected"})
     users_count = await db.users.count_documents({"role": "user"})
+    verified_clients = await db.users.count_documents(verified_client_query())
     kyc_pending = await db.users.count_documents({"kyc_status": "pending"})
     support_open = await db.support_threads.count_documents({"unread_admin": {"$gt": 0}})
     return {
         "total": total, "pending": pending, "in_review": in_review,
         "approved": approved, "rejected": rejected, "users": users_count,
+        "verified_clients": verified_clients,
         "kyc_pending": kyc_pending, "support_open": support_open,
     }
 
@@ -1212,6 +1395,68 @@ async def admin_del_news(nid: str, admin: dict = Depends(require_admin)):
     return {"ok": r.deleted_count > 0}
 
 
+@api_router.get("/admin/clients")
+async def admin_list_clients(
+    search: Optional[str] = None,
+    admin: dict = Depends(require_admin),
+):
+    """Oferta qabul qilgan va KYC tasdiqlangan mijozlar."""
+    cursor = db.users.find(
+        verified_client_query(search),
+        {"_id": 0, "password_hash": 0},
+    ).sort("created_at", -1)
+    users = await cursor.to_list(500)
+    return [serialize_user(u) for u in users]
+
+
+@api_router.patch("/admin/clients/{user_id}/phone")
+async def admin_update_client_phone(
+    user_id: str,
+    body: AdminUserPhoneIn,
+    admin: dict = Depends(require_admin),
+):
+    target = await get_manageable_user(user_id)
+    phone = normalize_phone(body.phone)
+    if phone == super_admin_phone():
+        raise HTTPException(status_code=400, detail="Super admin telefoniga o'zgartirib bo'lmaydi")
+    existing = await db.users.find_one({"phone": phone, "id": {"$ne": user_id}})
+    if existing:
+        raise HTTPException(status_code=400, detail="Bu telefon allaqachon ro'yxatdan o'tgan")
+    await db.users.update_one({"id": user_id}, {"$set": {"phone": phone}})
+    fresh = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+    logger.info(f"Admin {admin['id']} updated phone for user {user_id} -> {phone}")
+    return serialize_user(fresh)
+
+
+@api_router.patch("/admin/clients/{user_id}/block")
+async def admin_block_client(
+    user_id: str,
+    body: AdminUserBlockIn = AdminUserBlockIn(),
+    admin: dict = Depends(require_admin),
+):
+    await get_manageable_user(user_id)
+    now = now_iso()
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"blocked": True, "blocked_at": now, "blocked_note": body.note or ""}},
+    )
+    fresh = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+    logger.info(f"Admin {admin['id']} blocked user {user_id}")
+    return serialize_user(fresh)
+
+
+@api_router.patch("/admin/clients/{user_id}/unblock")
+async def admin_unblock_client(user_id: str, admin: dict = Depends(require_admin)):
+    await get_manageable_user(user_id)
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"blocked": False, "blocked_at": None, "blocked_note": ""}},
+    )
+    fresh = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+    logger.info(f"Admin {admin['id']} unblocked user {user_id}")
+    return serialize_user(fresh)
+
+
 @api_router.get("/admin/staff")
 async def admin_list_staff(admin: dict = Depends(require_super_admin)):
     users = await db.users.find(
@@ -1242,6 +1487,9 @@ async def admin_create_staff(body: AdminCreateIn, admin: dict = Depends(require_
         "kyc_note": "staff",
         "offer_accepted_at": now,
         "offer_version": OFFER_VERSION,
+        "blocked": False,
+        "blocked_at": None,
+        "blocked_note": "",
         "created_at": now,
     }
     await db.users.insert_one(user_doc)
@@ -1282,7 +1530,29 @@ async def lifespan(app: FastAPI):
         await db.requests.create_index("user_id")
         await db.requests.create_index("status")
         await db.requests.create_index("category")
+        await db.services.create_index("id", unique=True)
+        await db.services.create_index([("category", 1), ("order", 1)])
+        await db.services.create_index("active")
         await db.support_messages.create_index([("user_id", 1), ("created_at", 1)])
+
+        if await db.services.count_documents({}) == 0:
+            now = now_iso()
+            seed_docs = []
+            for cat, items in SERVICE_CATALOG.items():
+                for i, item in enumerate(items):
+                    seed_docs.append(
+                        {
+                            **item,
+                            "category": cat,
+                            "order": i,
+                            "active": True,
+                            "created_at": now,
+                            "updated_at": now,
+                        }
+                    )
+            if seed_docs:
+                await db.services.insert_many(seed_docs)
+                logger.info(f"Seeded {len(seed_docs)} services into catalog")
 
         async def _seed_staff(phone: str, password: str, role: str, first: str, last: str):
             now = now_iso()

@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
-import { Search, X, ChevronRight, ShieldCheck, Users, MessageSquare, Phone, FileText, CreditCard, Newspaper, UserPlus } from "lucide-react-native";
+import { Search, X, ChevronRight, ShieldCheck, Users, MessageSquare, Phone, FileText, CreditCard, Newspaper, UserPlus, UserCheck, Layers } from "lucide-react-native";
 import { api, formatApiError } from "../../src/api";
 import { useAuth, isSuperAdmin } from "../../src/auth";
 import { useI18n } from "../../src/i18n";
@@ -126,6 +126,8 @@ export default function AdminHub() {
 
         <View style={styles.adminNav}>
           <NavTile icon={<ShieldCheck color={COLORS.primary} size={20} />} label={t("reviewKyc")} count={stats?.kyc_pending} onPress={() => router.push("/admin/kyc")} testID="nav-kyc" />
+          <NavTile icon={<UserCheck color={COLORS.primary} size={20} />} label={t("clientsMgmt")} count={stats?.verified_clients} onPress={() => router.push("/admin/clients")} testID="nav-clients" />
+          <NavTile icon={<Layers color={COLORS.primary} size={20} />} label={t("servicesMgmt")} onPress={() => router.push("/admin/services")} testID="nav-services" />
           <NavTile icon={<MessageSquare color={COLORS.primary} size={20} />} label={t("supportChat")} count={stats?.support_open} onPress={() => router.push("/admin/support")} testID="nav-support" />
           <NavTile icon={<Newspaper color={COLORS.primary} size={20} />} label={t("newsMgmt")} onPress={() => router.push("/admin/news")} testID="nav-news" />
           {superAdmin && (
